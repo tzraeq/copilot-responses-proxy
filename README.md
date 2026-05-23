@@ -82,13 +82,39 @@ provider address 可以只写域名或 IP，端口可选。裸域名会补成 `h
 .\copilot-responses-proxy.exe serve
 ```
 
-Windows 构建无控制台窗口版本：
+## 编译指引
+
+安装 Rust stable 工具链后，在仓库根目录执行：
+
+```powershell
+cargo build
+```
+
+开发构建产物：
+
+```text
+target\debug\copilot-responses-proxy.exe
+```
+
+发布构建：
+
+```powershell
+cargo build --release
+```
+
+发布构建产物：
+
+```text
+target\release\copilot-responses-proxy.exe
+```
+
+Windows 托盘发布版建议隐藏控制台窗口：
 
 ```powershell
 cargo build --release --features hide-console
 ```
 
-开发时可以用 `cargo run -- <command>` 替代上面的 exe 命令。
+调试 CLI 输出时不要启用 `hide-console`，否则 `init`、`provider list`、`path config` 等命令的输出不可见。开发时可以用 `cargo run -- <command>` 替代上面的 exe 命令。
 
 Copilot 自定义 endpoint 配置为：
 
@@ -149,3 +175,37 @@ Set Copilot custom endpoint to:
 ```text
 http://127.0.0.1:8787/v1/responses
 ```
+
+## Build
+
+Install the Rust stable toolchain, then run from the repository root:
+
+```powershell
+cargo build
+```
+
+Debug build output:
+
+```text
+target\debug\copilot-responses-proxy.exe
+```
+
+Release build:
+
+```powershell
+cargo build --release
+```
+
+Release build output:
+
+```text
+target\release\copilot-responses-proxy.exe
+```
+
+For a Windows tray release without a console window:
+
+```powershell
+cargo build --release --features hide-console
+```
+
+Do not enable `hide-console` when debugging CLI output, because commands such as `init`, `provider list`, and `path config` print to the console.
