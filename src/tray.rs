@@ -1,5 +1,5 @@
 use crate::config::{REASONING_EFFORTS, default_log_dir, load_config, save_config};
-use crate::proxy::SharedConfig;
+use crate::proxy::{ADMIN_HEALTH_PATH, SharedConfig};
 use crate::system_open;
 use anyhow::{Context, Result};
 use std::path::PathBuf;
@@ -97,10 +97,7 @@ impl TrayApp {
                     .read()
                     .expect("config lock poisoned")
                     .clone();
-                system_open::open_detached(format!(
-                    "http://{}:{}/health",
-                    config.listen_host, config.listen_port
-                ))?;
+                system_open::open_detached(config.local_url(ADMIN_HEALTH_PATH))?;
             }
             "copy_endpoint" => {
                 let config = self
@@ -224,7 +221,7 @@ fn build_menu(config: &crate::config::AppConfig) -> Menu {
     );
     append_menu(
         &menu,
-        &MenuItem::with_id("open_health", "Open Health", true, None),
+        &MenuItem::with_id("open_health", "Open Admin Health", true, None),
     );
     append_menu(&menu, &PredefinedMenuItem::separator());
     append_menu(&menu, &MenuItem::with_id("quit", "Quit", true, None));
@@ -243,18 +240,9 @@ fn build_provider_menu(config: &crate::config::AppConfig) -> Submenu {
 
     for provider in &config.providers {
         let checked = config.active_provider.as_deref() == Some(provider.id.as_str());
-        let auth = if provider
-            .token
-            .as_deref()
-            .is_some_and(|token| !token.is_empty())
-        {
-            "token"
-        } else {
-            "pass-through"
-        };
         let item = CheckMenuItem::with_id(
             format!("provider:{}", provider.id),
-            format!("{} ({}) [{}]", provider.label, provider.id, auth),
+            provider.menu_label(),
             true,
             checked,
             None,

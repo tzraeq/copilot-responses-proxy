@@ -1,4 +1,4 @@
-use crate::config::{AppConfig, ReasoningEffort};
+use crate::config::{AppConfig, ReasoningEffort, load_config};
 use anyhow::{Context, Result};
 use bytes::Bytes;
 use futures_util::TryStreamExt;
@@ -24,11 +24,16 @@ type ResponseBody = BoxBody<Bytes, BoxError>;
 
 pub type SharedConfig = Arc<RwLock<AppConfig>>;
 
+pub const ADMIN_PREFIX: &str = "/_copilot-responses-proxy/admin/v1";
+pub const ADMIN_HEALTH_PATH: &str = "/_copilot-responses-proxy/admin/v1/health";
+pub const ADMIN_RELOAD_PATH: &str = "/_copilot-responses-proxy/admin/v1/reload";
+
 #[derive(Clone)]
 pub struct ProxyState {
     config: SharedConfig,
     client: reqwest::Client,
     log_dir: PathBuf,
+    config_path: PathBuf,
 }
 
 #[derive(Debug)]
@@ -39,7 +44,11 @@ pub struct ForwardBody {
     pub forwarded_summary: Option<Value>,
 }
 
-pub async fn serve(shared_config: SharedConfig, log_dir: PathBuf) -> Result<()> {
+pub async fn serve(
+    shared_config: SharedConfig,
+    log_dir: PathBuf,
+    config_path: PathBuf,
+) -> Result<()> {
     let bind_config = read_config(&shared_config);
     let addr: SocketAddr = format!("{}:{}", bind_config.listen_host, bind_config.listen_port)
         .parse()
@@ -61,20 +70,21 @@ pub async fn serve(shared_config: SharedConfig, log_dir: PathBuf) -> Result<()> 
         config: shared_config,
         client,
         log_dir,
+        config_path,
     };
 
     let listener = tokio::net::TcpListener::bind(addr).await?;
     println!("Copilot Responses proxy listening on http://{addr}/v1/responses");
 
     loop {
-        let (stream, _) = listener.accept().await?;
+        let (stream, peer_addr) = listener.accept().await?;
         let io = TokioIo::new(stream);
         let state = state.clone();
 
         tokio::spawn(async move {
             let service = service_fn(move |request| {
                 let state = state.clone();
-                async move { Ok::<_, Infallible>(handle_request(state, request).await) }
+                async move { Ok::<_, Infallible>(handle_request(state, request, peer_addr).await) }
             });
 
             let builder = AutoBuilder::new(TokioExecutor::new());
@@ -85,9 +95,29 @@ pub async fn serve(shared_config: SharedConfig, log_dir: PathBuf) -> Result<()> 
     }
 }
 
-async fn handle_request(state: ProxyState, request: Request<Incoming>) -> Response<ResponseBody> {
-    if request.uri().path() == "/health" && request.method() == Method::GET {
+async fn handle_request(
+    state: ProxyState,
+    request: Request<Incoming>,
+    peer_addr: SocketAddr,
+) -> Response<ResponseBody> {
+    let path = request.uri().path();
+    if path.starts_with(ADMIN_PREFIX) && !peer_addr.ip().is_loopback() {
+        return json_error(
+            StatusCode::FORBIDDEN,
+            "admin endpoint requires loopback peer",
+        );
+    }
+
+    if path == ADMIN_HEALTH_PATH && request.method() == Method::GET {
         return health_response(state);
+    }
+
+    if path == ADMIN_RELOAD_PATH {
+        return admin_reload_response(state, request.method());
+    }
+
+    if path.starts_with(ADMIN_PREFIX) {
+        return json_error(StatusCode::NOT_FOUND, "unknown proxy admin endpoint");
     }
 
     proxy_handler(state, request).await
@@ -101,12 +131,39 @@ fn health_response(state: ProxyState) -> Response<ResponseBody> {
             "status": "ok",
             "endpoint": config.endpoint(),
             "upstream_url": config.active_upstream_url(),
-            "active_provider": config.active_provider,
+            "active_provider": config.active_provider.clone(),
             "provider_count": config.providers.len(),
             "provider_has_token": config.active_provider_token_value().is_some(),
             "drop_truncation": config.drop_truncation,
             "reasoning_effort": config.reasoning_effort,
             "log_requests": config.log_requests,
+        }),
+    )
+}
+
+fn admin_reload_response(state: ProxyState, method: &Method) -> Response<ResponseBody> {
+    if method != Method::POST {
+        return json_error(StatusCode::METHOD_NOT_ALLOWED, "expected POST");
+    }
+    let config = match load_config(&state.config_path) {
+        Ok(config) => config,
+        Err(error) => {
+            return json_error(
+                StatusCode::BAD_REQUEST,
+                format!("failed to reload config: {error:#}"),
+            );
+        }
+    };
+
+    *state.config.write().expect("config lock poisoned") = config.clone();
+    json_response(
+        StatusCode::OK,
+        json!({
+            "status": "reloaded",
+            "active_provider": config.active_provider.clone(),
+            "upstream_url": config.active_upstream_url(),
+            "reasoning_effort": config.reasoning_effort,
+            "drop_truncation": config.drop_truncation,
         }),
     )
 }
@@ -361,7 +418,7 @@ async fn write_request_log(
         "ts_ms": started_at,
         "elapsed_ms": now_millis().saturating_sub(started_at),
         "upstream_url": config.active_upstream_url(),
-        "active_provider": config.active_provider,
+        "active_provider": config.active_provider.clone(),
         "status": status,
         "rewrites": forward.rewrites,
         "summary": forward.summary,

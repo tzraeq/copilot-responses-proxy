@@ -8,7 +8,7 @@ use std::path::{Path, PathBuf};
 use std::str::FromStr;
 
 pub const APP_NAME: &str = "copilot-responses-proxy";
-pub const CONFIG_VERSION: &str = "0.6.0";
+pub const CONFIG_VERSION: &str = "0.1.0";
 pub const DEFAULT_UPSTREAM_URL: &str = "https://api.freshid.top/v1/responses";
 pub const REASONING_EFFORTS: [ReasoningEffort; 5] = [
     ReasoningEffort::Minimal,
@@ -49,6 +49,20 @@ pub struct ProviderProfile {
     pub label: String,
     pub address: String,
     pub token: Option<String>,
+}
+
+impl ProviderProfile {
+    pub fn auth_label(&self) -> &'static str {
+        if self.token.as_deref().is_some_and(|token| !token.is_empty()) {
+            "token"
+        } else {
+            "pass-through"
+        }
+    }
+
+    pub fn menu_label(&self) -> String {
+        format!("{} | {} [{}]", self.id, self.label, self.auth_label())
+    }
 }
 
 impl Default for AppConfig {
@@ -104,10 +118,24 @@ impl FromStr for ReasoningEffort {
 
 impl AppConfig {
     pub fn endpoint(&self) -> String {
+        self.local_url("/v1/responses")
+    }
+
+    pub fn local_url(&self, path: &str) -> String {
         format!(
-            "http://{}:{}/v1/responses",
-            self.listen_host, self.listen_port
+            "http://{}:{}{}",
+            url_host(&self.client_host()),
+            self.listen_port,
+            path
         )
+    }
+
+    pub fn client_host(&self) -> String {
+        match self.listen_host.parse::<IpAddr>() {
+            Ok(IpAddr::V4(address)) if address.is_unspecified() => "127.0.0.1".to_string(),
+            Ok(IpAddr::V6(address)) if address.is_unspecified() => "::1".to_string(),
+            _ => self.listen_host.clone(),
+        }
     }
 
     pub fn active_provider_profile(&self) -> Option<&ProviderProfile> {
@@ -399,6 +427,14 @@ fn is_root_url(url: &reqwest::Url) -> bool {
     matches!(url.path(), "" | "/") && url.query().is_none() && url.fragment().is_none()
 }
 
+fn url_host(host: &str) -> String {
+    if host.contains(':') && !host.starts_with('[') {
+        format!("[{host}]")
+    } else {
+        host.to_string()
+    }
+}
+
 fn default_provider_label(address: &str) -> Option<String> {
     reqwest::Url::parse(address)
         .ok()
@@ -419,6 +455,41 @@ mod tests {
         config.normalize().unwrap();
 
         assert_eq!(config.version, CONFIG_VERSION);
+    }
+
+    #[test]
+    fn provider_menu_label_puts_id_first_and_auth_last() {
+        let provider = ProviderProfile {
+            id: "main".to_string(),
+            label: "api.example.com".to_string(),
+            address: "https://api.example.com/v1/responses".to_string(),
+            token: Some("sk-test".to_string()),
+        };
+
+        assert_eq!(provider.auth_label(), "token");
+        assert_eq!(provider.menu_label(), "main | api.example.com [token]");
+    }
+
+    #[test]
+    fn endpoint_maps_wildcard_listener_to_loopback() {
+        let config = AppConfig {
+            listen_host: "0.0.0.0".to_string(),
+            listen_port: 8787,
+            ..AppConfig::default()
+        };
+
+        assert_eq!(config.endpoint(), "http://127.0.0.1:8787/v1/responses");
+    }
+
+    #[test]
+    fn endpoint_brackets_ipv6_host() {
+        let config = AppConfig {
+            listen_host: "::1".to_string(),
+            listen_port: 8787,
+            ..AppConfig::default()
+        };
+
+        assert_eq!(config.endpoint(), "http://[::1]:8787/v1/responses");
     }
 
     #[test]

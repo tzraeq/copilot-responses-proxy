@@ -56,6 +56,12 @@ provider address 可以只写域名或 IP，端口可选。裸域名会补成 `h
 .\copilot-responses-proxy.exe provider use main
 ```
 
+查看 provider：
+
+```powershell
+.\copilot-responses-proxy.exe provider list
+```
+
 设置推理强度：
 
 ```powershell
@@ -68,6 +74,12 @@ provider address 可以只写域名或 IP，端口可选。裸域名会补成 `h
 
 ```powershell
 .\copilot-responses-proxy.exe reasoning clear
+```
+
+查看推理强度枚举：
+
+```powershell
+.\copilot-responses-proxy.exe reasoning list
 ```
 
 启动托盘代理：
@@ -161,8 +173,10 @@ This app makes the workaround persistent: configure Copilot once with a local en
 .\copilot-responses-proxy.exe provider add main api.freshid.top sk-your-token
 .\copilot-responses-proxy.exe provider add copilot api.freshid.top
 .\copilot-responses-proxy.exe provider use main
+.\copilot-responses-proxy.exe provider list
 .\copilot-responses-proxy.exe reasoning use high
 .\copilot-responses-proxy.exe reasoning clear
+.\copilot-responses-proxy.exe reasoning list
 .\copilot-responses-proxy.exe
 ```
 
