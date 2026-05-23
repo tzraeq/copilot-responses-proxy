@@ -468,7 +468,7 @@ mod tests {
     #[test]
     fn combines_truncation_drop_and_reasoning_effort_rewrite() {
         let raw = br#"{"truncation":"disabled","reasoning":{"effort":"low"}}"#;
-        let forward = prepare_forward_body(raw, true, Some(ReasoningEffort::None));
+        let forward = prepare_forward_body(raw, true, Some(ReasoningEffort::Minimal));
         let value: Value = serde_json::from_slice(&forward.body).unwrap();
 
         assert_eq!(
@@ -476,6 +476,6 @@ mod tests {
             vec!["drop_truncation", "set_reasoning_effort"]
         );
         assert!(value.get("truncation").is_none());
-        assert_eq!(value["reasoning"]["effort"], "none");
+        assert_eq!(value["reasoning"]["effort"], "minimal");
     }
 }

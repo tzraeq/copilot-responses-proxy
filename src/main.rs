@@ -138,7 +138,7 @@ fn reasoning_command(args: &[String]) -> Result<()> {
         "use" | "set" => {
             let effort = args
                 .get(1)
-                .context("missing reasoning effort; expected none/minimal/low/medium/high/xhigh")?
+                .context("missing reasoning effort; expected minimal/low/medium/high/xhigh")?
                 .parse::<ReasoningEffort>()?;
             config.set_reasoning_effort(effort);
             save_config(&path, &config)?;
@@ -220,7 +220,7 @@ Commands:
   token remove <id>
   token clear
   token list
-  reasoning use <none|minimal|low|medium|high|xhigh>
+  reasoning use <minimal|low|medium|high|xhigh>
   reasoning clear
   reasoning list
   path config

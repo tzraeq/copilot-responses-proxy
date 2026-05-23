@@ -8,8 +8,7 @@ use std::str::FromStr;
 
 pub const APP_NAME: &str = "copilot-responses-proxy";
 pub const DEFAULT_UPSTREAM_URL: &str = "https://api.freshid.top/v1/responses";
-pub const REASONING_EFFORTS: [ReasoningEffort; 6] = [
-    ReasoningEffort::None,
+pub const REASONING_EFFORTS: [ReasoningEffort; 5] = [
     ReasoningEffort::Minimal,
     ReasoningEffort::Low,
     ReasoningEffort::Medium,
@@ -33,7 +32,6 @@ pub struct AppConfig {
 #[derive(Debug, Copy, Clone, Eq, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
 pub enum ReasoningEffort {
-    None,
     Minimal,
     Low,
     Medium,
@@ -67,7 +65,6 @@ impl Default for AppConfig {
 impl ReasoningEffort {
     pub fn as_str(self) -> &'static str {
         match self {
-            Self::None => "none",
             Self::Minimal => "minimal",
             Self::Low => "low",
             Self::Medium => "medium",
@@ -88,14 +85,13 @@ impl FromStr for ReasoningEffort {
 
     fn from_str(value: &str) -> Result<Self> {
         match value.to_ascii_lowercase().as_str() {
-            "none" => Ok(Self::None),
             "minimal" => Ok(Self::Minimal),
             "low" => Ok(Self::Low),
             "medium" => Ok(Self::Medium),
             "high" => Ok(Self::High),
             "xhigh" => Ok(Self::XHigh),
             _ => bail!(
-                "invalid reasoning effort `{value}`; expected one of: none, minimal, low, medium, high, xhigh"
+                "invalid reasoning effort `{value}`; expected one of: minimal, low, medium, high, xhigh"
             ),
         }
     }

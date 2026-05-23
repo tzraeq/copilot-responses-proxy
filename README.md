@@ -60,7 +60,7 @@
 .\copilot-responses-proxy.exe reasoning use high
 ```
 
-可选值为 `none`、`minimal`、`low`、`medium`、`high`、`xhigh`。不同模型支持的范围可能不同；代理只注入字段，不做模型兼容性判断。
+可选值为 `minimal`、`low`、`medium`、`high`、`xhigh`。不同模型支持的范围可能不同；代理只注入字段，不做模型兼容性判断。
 
 清空推理强度，改为不改写请求里的 `reasoning`：
 
@@ -138,7 +138,7 @@ This app makes the workaround persistent: configure Copilot once with a local en
 .\copilot-responses-proxy.exe
 ```
 
-Reasoning effort values are `none`, `minimal`, `low`, `medium`, `high`, and `xhigh`. Model support can vary; unsupported values are left for the upstream API to reject.
+Reasoning effort values are `minimal`, `low`, `medium`, `high`, and `xhigh`. Model support can vary; unsupported values are left for the upstream API to reject.
 
 Set Copilot custom endpoint to:
 

@@ -253,14 +253,10 @@ fn build_menu(config: &crate::config::AppConfig) -> Submenu {
 
 fn build_reasoning_menu(config: &crate::config::AppConfig) -> Submenu {
     let menu = Submenu::new("Reasoning Effort", true);
-    let pass_through = CheckMenuItem::with_id(
-        "reasoning:clear",
-        "Pass Through",
-        true,
-        config.reasoning_effort.is_none(),
-        None,
+    append(
+        &menu,
+        &MenuItem::with_id("reasoning:clear", "Clear", true, None),
     );
-    append(&menu, &pass_through);
     append(&menu, &PredefinedMenuItem::separator());
 
     for effort in REASONING_EFFORTS {
