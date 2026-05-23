@@ -6,7 +6,7 @@ use std::path::PathBuf;
 use tao::event::{Event, StartCause};
 use tao::event_loop::{ControlFlow, EventLoopBuilder};
 use tray_icon::menu::{
-    CheckMenuItem, IsMenuItem, MenuEvent, MenuId, MenuItem, PredefinedMenuItem, Submenu,
+    CheckMenuItem, IsMenuItem, Menu, MenuEvent, MenuId, MenuItem, PredefinedMenuItem, Submenu,
 };
 use tray_icon::{Icon, TrayIcon, TrayIconBuilder};
 
@@ -175,8 +175,8 @@ impl TrayApp {
     }
 }
 
-fn build_menu(config: &crate::config::AppConfig) -> Submenu {
-    let menu = Submenu::new("Copilot Responses Proxy", true);
+fn build_menu(config: &crate::config::AppConfig) -> Menu {
+    let menu = Menu::new();
 
     let status = MenuItem::with_id(
         "status",
@@ -200,34 +200,34 @@ fn build_menu(config: &crate::config::AppConfig) -> Submenu {
         None,
     );
 
-    append(&menu, &status);
-    append(&menu, &endpoint_label);
-    append(&menu, &endpoint);
-    append(&menu, &upstream);
-    append(&menu, &PredefinedMenuItem::separator());
-    append(&menu, &truncation);
-    append(&menu, &build_reasoning_menu(config));
-    append(&menu, &build_provider_menu(config));
+    append_menu(&menu, &status);
+    append_menu(&menu, &endpoint_label);
+    append_menu(&menu, &endpoint);
+    append_menu(&menu, &upstream);
+    append_menu(&menu, &PredefinedMenuItem::separator());
+    append_menu(&menu, &truncation);
+    append_menu(&menu, &build_reasoning_menu(config));
+    append_menu(&menu, &build_provider_menu(config));
 
-    append(&menu, &PredefinedMenuItem::separator());
-    append(
+    append_menu(&menu, &PredefinedMenuItem::separator());
+    append_menu(
         &menu,
         &MenuItem::with_id("reload_config", "Reload Config", true, None),
     );
-    append(
+    append_menu(
         &menu,
         &MenuItem::with_id("open_config", "Open Config", true, None),
     );
-    append(
+    append_menu(
         &menu,
         &MenuItem::with_id("open_logs", "Open Logs", true, None),
     );
-    append(
+    append_menu(
         &menu,
         &MenuItem::with_id("open_health", "Open Health", true, None),
     );
-    append(&menu, &PredefinedMenuItem::separator());
-    append(&menu, &MenuItem::with_id("quit", "Quit", true, None));
+    append_menu(&menu, &PredefinedMenuItem::separator());
+    append_menu(&menu, &MenuItem::with_id("quit", "Quit", true, None));
 
     menu
 }
@@ -237,7 +237,7 @@ fn build_provider_menu(config: &crate::config::AppConfig) -> Submenu {
 
     if config.providers.is_empty() {
         let empty = MenuItem::with_id("provider_empty", "No providers configured", false, None);
-        append(&menu, &empty);
+        append_submenu(&menu, &empty);
         return menu;
     }
 
@@ -259,7 +259,7 @@ fn build_provider_menu(config: &crate::config::AppConfig) -> Submenu {
             checked,
             None,
         );
-        append(&menu, &item);
+        append_submenu(&menu, &item);
     }
 
     menu
@@ -267,11 +267,11 @@ fn build_provider_menu(config: &crate::config::AppConfig) -> Submenu {
 
 fn build_reasoning_menu(config: &crate::config::AppConfig) -> Submenu {
     let menu = Submenu::new("Reasoning Effort", true);
-    append(
+    append_submenu(
         &menu,
         &MenuItem::with_id("reasoning:clear", "Clear", true, None),
     );
-    append(&menu, &PredefinedMenuItem::separator());
+    append_submenu(&menu, &PredefinedMenuItem::separator());
 
     for effort in REASONING_EFFORTS {
         let item = CheckMenuItem::with_id(
@@ -281,13 +281,19 @@ fn build_reasoning_menu(config: &crate::config::AppConfig) -> Submenu {
             config.reasoning_effort == Some(effort),
             None,
         );
-        append(&menu, &item);
+        append_submenu(&menu, &item);
     }
 
     menu
 }
 
-fn append(menu: &Submenu, item: &impl IsMenuItem) {
+fn append_menu(menu: &Menu, item: &impl IsMenuItem) {
+    if let Err(error) = menu.append(item) {
+        eprintln!("failed to append tray menu item: {error}");
+    }
+}
+
+fn append_submenu(menu: &Submenu, item: &impl IsMenuItem) {
     if let Err(error) = menu.append(item) {
         eprintln!("failed to append tray menu item: {error}");
     }
