@@ -112,13 +112,6 @@ impl TrayApp {
                 self.replace_shared_config(config);
                 self.rebuild_menu()?;
             }
-            "clear_token" => {
-                let mut config = load_config(&self.config_path)?;
-                config.clear_active_token();
-                save_config(&self.config_path, &config)?;
-                self.replace_shared_config(config);
-                self.rebuild_menu()?;
-            }
             other if other.starts_with("reasoning:") => {
                 let value = other.trim_start_matches("reasoning:");
                 let mut config = load_config(&self.config_path)?;
@@ -134,10 +127,10 @@ impl TrayApp {
             "quit" => {
                 self.should_quit = true;
             }
-            other if other.starts_with("token:") => {
-                let token_id = other.trim_start_matches("token:");
+            other if other.starts_with("provider:") => {
+                let provider_id = other.trim_start_matches("provider:");
                 let mut config = load_config(&self.config_path)?;
-                config.use_token(token_id)?;
+                config.use_provider(provider_id)?;
                 save_config(&self.config_path, &config)?;
                 self.replace_shared_config(config);
                 self.rebuild_menu()?;
@@ -182,7 +175,7 @@ fn build_menu(config: &crate::config::AppConfig) -> Submenu {
     let endpoint = MenuItem::with_id("endpoint", config.endpoint(), false, None);
     let upstream = MenuItem::with_id(
         "upstream",
-        format!("Upstream: {}", config.upstream_url),
+        format!("Upstream: {}", config.active_upstream_url()),
         false,
         None,
     );
@@ -200,33 +193,7 @@ fn build_menu(config: &crate::config::AppConfig) -> Submenu {
     append(&menu, &PredefinedMenuItem::separator());
     append(&menu, &truncation);
     append(&menu, &build_reasoning_menu(config));
-    append(&menu, &PredefinedMenuItem::separator());
-
-    let pass_through = CheckMenuItem::with_id(
-        "clear_token",
-        "Pass Through Authorization",
-        true,
-        config.active_token.is_none(),
-        None,
-    );
-    append(&menu, &pass_through);
-
-    if config.tokens.is_empty() {
-        let empty = MenuItem::with_id("token_empty", "No tokens configured", false, None);
-        append(&menu, &empty);
-    } else {
-        for token in &config.tokens {
-            let checked = config.active_token.as_deref() == Some(token.id.as_str());
-            let item = CheckMenuItem::with_id(
-                format!("token:{}", token.id),
-                format!("{} ({})", token.label, token.id),
-                true,
-                checked,
-                None,
-            );
-            append(&menu, &item);
-        }
-    }
+    append(&menu, &build_provider_menu(config));
 
     append(&menu, &PredefinedMenuItem::separator());
     append(
@@ -247,6 +214,39 @@ fn build_menu(config: &crate::config::AppConfig) -> Submenu {
     );
     append(&menu, &PredefinedMenuItem::separator());
     append(&menu, &MenuItem::with_id("quit", "Quit", true, None));
+
+    menu
+}
+
+fn build_provider_menu(config: &crate::config::AppConfig) -> Submenu {
+    let menu = Submenu::new("Provider", true);
+
+    if config.providers.is_empty() {
+        let empty = MenuItem::with_id("provider_empty", "No providers configured", false, None);
+        append(&menu, &empty);
+        return menu;
+    }
+
+    for provider in &config.providers {
+        let checked = config.active_provider.as_deref() == Some(provider.id.as_str());
+        let auth = if provider
+            .token
+            .as_deref()
+            .is_some_and(|token| !token.is_empty())
+        {
+            "token"
+        } else {
+            "pass-through"
+        };
+        let item = CheckMenuItem::with_id(
+            format!("provider:{}", provider.id),
+            format!("{} ({}) [{}]", provider.label, provider.id, auth),
+            true,
+            checked,
+            None,
+        );
+        append(&menu, &item);
+    }
 
     menu
 }

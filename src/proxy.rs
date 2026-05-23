@@ -100,11 +100,12 @@ fn health_response(state: ProxyState) -> Response<ResponseBody> {
         json!({
             "status": "ok",
             "endpoint": config.endpoint(),
-            "upstream_url": config.upstream_url,
+            "upstream_url": config.active_upstream_url(),
+            "active_provider": config.active_provider,
+            "provider_count": config.providers.len(),
+            "provider_has_token": config.active_provider_token_value().is_some(),
             "drop_truncation": config.drop_truncation,
             "reasoning_effort": config.reasoning_effort,
-            "active_token": config.active_token,
-            "token_count": config.tokens.len(),
             "log_requests": config.log_requests,
         }),
     )
@@ -126,11 +127,11 @@ async fn proxy_handler(state: ProxyState, request: Request<Incoming>) -> Respons
     let config = read_config(&state.config);
     let forward = prepare_forward_body(&raw_body, config.drop_truncation, config.reasoning_effort);
     let method = reqwest_method(&parts.method);
-    let active_token = config.active_token_value().map(str::to_string);
-    let upstream_url = config.upstream_url.clone();
+    let provider_token = config.active_provider_token_value().map(str::to_string);
+    let upstream_url = config.active_upstream_url().to_string();
 
     let mut outbound = state.client.request(method, &upstream_url);
-    outbound = apply_request_headers(outbound, &parts.headers, active_token.as_deref());
+    outbound = apply_request_headers(outbound, &parts.headers, provider_token.as_deref());
     if parts.method != Method::GET && parts.method != Method::HEAD {
         outbound = outbound.body(forward.body.clone());
     }
@@ -259,19 +260,19 @@ fn reqwest_method(method: &Method) -> reqwest::Method {
 fn apply_request_headers(
     mut builder: reqwest::RequestBuilder,
     headers: &HeaderMap,
-    active_token: Option<&str>,
+    provider_token: Option<&str>,
 ) -> reqwest::RequestBuilder {
     for (name, value) in headers {
         if should_skip_request_header(name.as_str()) {
             continue;
         }
-        if name == header::AUTHORIZATION && active_token.is_some() {
+        if name == header::AUTHORIZATION && provider_token.is_some() {
             continue;
         }
         builder = builder.header(name.as_str(), value.as_bytes());
     }
 
-    if let Some(token) = active_token {
+    if let Some(token) = provider_token {
         builder = builder.bearer_auth(token);
     }
 
@@ -359,7 +360,8 @@ async fn write_request_log(
     let entry = json!({
         "ts_ms": started_at,
         "elapsed_ms": now_millis().saturating_sub(started_at),
-        "upstream_url": config.upstream_url,
+        "upstream_url": config.active_upstream_url(),
+        "active_provider": config.active_provider,
         "status": status,
         "rewrites": forward.rewrites,
         "summary": forward.summary,

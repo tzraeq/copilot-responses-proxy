@@ -12,21 +12,21 @@
 
 兼容不好。删除这个顶层字段后，同一批请求可以正常通过。
 
-这个程序把这个修正固化下来：Copilot 只需要配置一次本地地址，之后代理负责转发、移除 `truncation`。鉴权可以由 Copilot 自己管理，也可以在代理里保存 token profile 后由代理注入。需要固定推理强度时，代理也可以注入 Responses API 的 `reasoning.effort` 字段。
+这个程序把这个修正固化下来：Copilot 只需要配置一次本地地址，之后代理负责转发、移除 `truncation`。上游地址和 token 通过 provider profile 管理；provider token 留空时，代理不注入鉴权，直接透传 Copilot 请求里的 `Authorization`。需要固定推理强度时，代理也可以注入 Responses API 的 `reasoning.effort` 字段。
 
 ## 功能
 
 - Windows / macOS 托盘程序
 - 本地监听 `http://127.0.0.1:8787/v1/responses`
-- 转发到 `https://api.freshid.top/v1/responses`
+- 默认转发到 `https://api.freshid.top/v1/responses`
 - 自动删除顶层 `truncation`
 - 可选注入 `reasoning.effort`
-- 支持多个 token profile
-- 支持托盘或 CLI 切换当前 token，也可以清空当前 token 走请求头透传
+- 支持多个 provider profile，每个 profile 包含上游地址和可选 token
+- 支持托盘或 CLI 切换当前 provider
 - 支持托盘或 CLI 切换推理强度，也可以清空后保持请求原样
 - 保留摘要日志，便于排查问题
 
-> 当前版本的 token 存在本机配置文件中。后续可以改成 Windows Credential Manager / macOS Keychain。
+> 当前版本的 provider token 存在本机配置文件中。后续可以改成 Windows Credential Manager / macOS Keychain。
 
 ## 使用
 
@@ -36,22 +36,24 @@
 .\copilot-responses-proxy.exe init
 ```
 
-添加 token：
+添加 provider，并由代理注入 token：
 
 ```powershell
-.\copilot-responses-proxy.exe token add main sk-your-token --label Main
+.\copilot-responses-proxy.exe provider add main api.freshid.top sk-your-token
 ```
 
-切换 token：
+添加 provider，但 token 留空，改为透传 Copilot 请求里的 `Authorization`：
 
 ```powershell
-.\copilot-responses-proxy.exe token use main
+.\copilot-responses-proxy.exe provider add copilot api.freshid.top
 ```
 
-清空当前 token，改为透传 Copilot 请求里的 `Authorization`：
+provider address 可以只写域名或 IP，端口可选。裸域名会补成 `https://<host>/v1/responses`，裸 IP 或 `localhost` 会补成 `http://<host>/v1/responses`。如果地址已经带有路径，例如 `relay.example.com/custom/responses`，代理只补协议，不再追加 `/v1/responses`。`--label` 可省略，默认使用 host。
+
+切换 provider：
 
 ```powershell
-.\copilot-responses-proxy.exe token clear
+.\copilot-responses-proxy.exe provider use main
 ```
 
 设置推理强度：
@@ -110,33 +112,35 @@ When using VS Code Insiders Copilot Agent mode with a New API-backed Responses e
 
 Removing that field allows the same request to pass through the upstream service.
 
-This app makes the workaround persistent: configure Copilot once with a local endpoint, then let the proxy forward requests and remove `truncation`. Authentication can stay managed by Copilot, or the proxy can inject a selected token profile. When needed, the proxy can also inject the Responses API `reasoning.effort` field.
+This app makes the workaround persistent: configure Copilot once with a local endpoint, then let the proxy forward requests and remove `truncation`. Upstream addresses and tokens are managed through provider profiles; when a provider token is empty, the proxy does not inject auth and forwards Copilot's incoming `Authorization` header. When needed, the proxy can also inject the Responses API `reasoning.effort` field.
 
 ## Features
 
 - Windows / macOS tray app
 - Listens on `http://127.0.0.1:8787/v1/responses`
-- Forwards to `https://api.freshid.top/v1/responses`
+- Forwards to `https://api.freshid.top/v1/responses` by default
 - Removes top-level `truncation`
 - Optionally injects `reasoning.effort`
-- Multiple token profiles
-- Token switching from tray or CLI, with a clear option for request-header pass-through
+- Multiple provider profiles, each with an upstream address and optional token
+- Provider switching from tray or CLI
 - Reasoning effort switching from tray or CLI, with a clear option for no request rewrite
 - Summary logs for debugging
 
-> Token values are currently stored in the local config file. A future version can move them to Windows Credential Manager / macOS Keychain.
+> Provider token values are currently stored in the local config file. A future version can move them to Windows Credential Manager / macOS Keychain.
 
 ## Usage
 
 ```powershell
 .\copilot-responses-proxy.exe init
-.\copilot-responses-proxy.exe token add main sk-your-token --label Main
-.\copilot-responses-proxy.exe token use main
-.\copilot-responses-proxy.exe token clear
+.\copilot-responses-proxy.exe provider add main api.freshid.top sk-your-token
+.\copilot-responses-proxy.exe provider add copilot api.freshid.top
+.\copilot-responses-proxy.exe provider use main
 .\copilot-responses-proxy.exe reasoning use high
 .\copilot-responses-proxy.exe reasoning clear
 .\copilot-responses-proxy.exe
 ```
+
+Provider addresses can be a bare domain or IP with an optional port. Bare domains become `https://<host>/v1/responses`, while bare IPs and `localhost` become `http://<host>/v1/responses`. If the address already contains a path, the proxy keeps that path and only fills in the scheme. When `--label` is omitted, the host is used as the label.
 
 Reasoning effort values are `minimal`, `low`, `medium`, `high`, and `xhigh`. Model support can vary; unsupported values are left for the upstream API to reject.
 

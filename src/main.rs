@@ -22,7 +22,7 @@ fn main() -> Result<()> {
         None => run(true),
         Some("init") => init_config(),
         Some("serve") => run(false),
-        Some("token") => token_command(&args[1..]),
+        Some("provider") => provider_command(&args[1..]),
         Some("reasoning") => reasoning_command(&args[1..]),
         Some("path") => path_command(&args[1..]),
         Some("-h" | "--help" | "help") => {
@@ -37,7 +37,8 @@ fn init_config() -> Result<()> {
     let (path, config) = load_or_create_config()?;
     println!("Config: {}", path.display());
     println!("Copilot endpoint: {}", config.endpoint());
-    println!("Upstream: {}", config.upstream_url);
+    println!("Active provider: {}", active_provider_label(&config));
+    println!("Upstream: {}", config.active_upstream_url());
     Ok(())
 }
 
@@ -68,61 +69,69 @@ fn run(with_tray: bool) -> Result<()> {
     }
 }
 
-fn token_command(args: &[String]) -> Result<()> {
+fn provider_command(args: &[String]) -> Result<()> {
     let Some(command) = args.first().map(String::as_str) else {
-        bail!("missing token command; expected add/use/remove/clear/list");
+        bail!("missing provider command; expected add/use/remove/list");
     };
     let (path, mut config) = load_or_create_config()?;
 
     match command {
         "add" => {
-            let id = args.get(1).context("missing token id")?.clone();
-            let token = args.get(2).context("missing token value")?.clone();
-            let label = parse_label_arg(&args[3..])?;
-            config.upsert_token(id.clone(), label, token)?;
+            let id = args.get(1).context("missing provider id")?.clone();
+            let address = args.get(2).context("missing provider address")?.clone();
+            let (token, label) = parse_provider_add_tail(&args[3..])?;
+            config.upsert_provider(id.clone(), label, address, token)?;
             save_config(&path, &config)?;
-            println!("Saved token profile `{id}`.");
-            if config.active_token.as_deref() == Some(id.as_str()) {
-                println!("Active token: {id}");
+            println!("Saved provider profile `{id}`.");
+            if config.active_provider.as_deref() == Some(id.as_str()) {
+                println!("Active provider: {id}");
             }
         }
         "use" => {
-            let id = args.get(1).context("missing token id")?;
-            config.use_token(id)?;
+            let id = args.get(1).context("missing provider id")?;
+            config.use_provider(id)?;
             save_config(&path, &config)?;
-            println!("Active token: {id}");
+            println!("Active provider: {id}");
         }
         "remove" => {
-            let id = args.get(1).context("missing token id")?;
-            config.remove_token(id)?;
+            let id = args.get(1).context("missing provider id")?;
+            config.remove_provider(id)?;
+            config.normalize()?;
             save_config(&path, &config)?;
-            println!("Removed token profile `{id}`.");
+            println!("Removed provider profile `{id}`.");
             println!(
-                "Active token: {}",
-                config.active_token.as_deref().unwrap_or("<none>")
+                "Active provider: {}",
+                config.active_provider.as_deref().unwrap_or("<none>")
             );
         }
-        "clear" => {
-            config.clear_active_token();
-            save_config(&path, &config)?;
-            println!("Active token cleared.");
-            println!("Authorization will be forwarded from incoming requests.");
-        }
         "list" => {
-            if config.tokens.is_empty() {
-                println!("No token profiles configured.");
+            if config.providers.is_empty() {
+                println!("No provider profiles configured.");
             } else {
-                for token in &config.tokens {
-                    let marker = if config.active_token.as_deref() == Some(token.id.as_str()) {
+                for provider in &config.providers {
+                    let marker = if config.active_provider.as_deref() == Some(provider.id.as_str())
+                    {
                         "*"
                     } else {
                         " "
                     };
-                    println!("{marker} {} ({})", token.label, token.id);
+                    let auth = if provider
+                        .token
+                        .as_deref()
+                        .is_some_and(|token| !token.is_empty())
+                    {
+                        "token"
+                    } else {
+                        "pass-through"
+                    };
+                    println!(
+                        "{marker} {} ({}) [{}] {}",
+                        provider.label, provider.id, auth, provider.address
+                    );
                 }
             }
         }
-        other => bail!("unknown token command `{other}`; expected add/use/remove/clear/list"),
+        other => bail!("unknown provider command `{other}`; expected add/use/remove/list"),
     }
 
     Ok(())
@@ -197,14 +206,34 @@ fn path_command(args: &[String]) -> Result<()> {
     Ok(())
 }
 
-fn parse_label_arg(args: &[String]) -> Result<Option<String>> {
+fn parse_provider_add_tail(args: &[String]) -> Result<(Option<String>, Option<String>)> {
     if args.is_empty() {
-        return Ok(None);
+        return Ok((None, None));
     }
-    if args.len() == 2 && args[0] == "--label" {
-        return Ok(Some(args[1].clone()));
+    if args[0] == "--label" {
+        if args.len() == 2 {
+            return Ok((None, Some(args[1].clone())));
+        }
+        bail!("unexpected args after provider address; use `[token] [--label <label>]`");
     }
-    bail!("unexpected args after token value; use `--label <label>`")
+
+    let token = Some(args[0].clone());
+    let label = if args.len() == 1 {
+        None
+    } else if args.len() == 3 && args[1] == "--label" {
+        Some(args[2].clone())
+    } else {
+        bail!("unexpected args after provider token; use `[token] [--label <label>]`");
+    };
+
+    Ok((token, label))
+}
+
+fn active_provider_label(config: &config::AppConfig) -> String {
+    if let Some(provider) = config.active_provider_profile() {
+        return format!("{} ({})", provider.label, provider.id);
+    }
+    "<none>".to_string()
 }
 
 fn print_help() {
@@ -215,11 +244,10 @@ copilot-responses-proxy
 Commands:
   init
   serve
-  token add <id> <token> [--label <label>]
-  token use <id>
-  token remove <id>
-  token clear
-  token list
+  provider add <id> <address|host[:port]> [token] [--label <label>]
+  provider use <id>
+  provider remove <id>
+  provider list
   reasoning use <minimal|low|medium|high|xhigh>
   reasoning clear
   reasoning list
