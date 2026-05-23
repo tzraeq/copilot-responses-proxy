@@ -112,6 +112,13 @@ impl TrayApp {
                 self.replace_shared_config(config);
                 self.rebuild_menu()?;
             }
+            "clear_token" => {
+                let mut config = load_config(&self.config_path)?;
+                config.clear_active_token();
+                save_config(&self.config_path, &config)?;
+                self.replace_shared_config(config);
+                self.rebuild_menu()?;
+            }
             "quit" => {
                 self.should_quit = true;
             }
@@ -181,6 +188,15 @@ fn build_menu(config: &crate::config::AppConfig) -> Submenu {
     append(&menu, &PredefinedMenuItem::separator());
     append(&menu, &truncation);
     append(&menu, &PredefinedMenuItem::separator());
+
+    let pass_through = CheckMenuItem::with_id(
+        "clear_token",
+        "Pass Through Authorization",
+        true,
+        config.active_token.is_none(),
+        None,
+    );
+    append(&menu, &pass_through);
 
     if config.tokens.is_empty() {
         let empty = MenuItem::with_id("token_empty", "No tokens configured", false, None);

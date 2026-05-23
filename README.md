@@ -12,7 +12,7 @@
 
 兼容不好。删除这个顶层字段后，同一批请求可以正常通过。
 
-这个程序把这个修正固化下来：Copilot 只需要配置一次本地地址，之后代理负责转发、移除 `truncation`，并允许从托盘或命令行切换 token。
+这个程序把这个修正固化下来：Copilot 只需要配置一次本地地址，之后代理负责转发、移除 `truncation`。鉴权可以由 Copilot 自己管理，也可以在代理里保存 token profile 后由代理注入。
 
 ## 功能
 
@@ -21,41 +21,47 @@
 - 转发到 `https://api.freshid.top/v1/responses`
 - 自动删除顶层 `truncation`
 - 支持多个 token profile
-- 支持托盘或 CLI 切换当前 token
+- 支持托盘或 CLI 切换当前 token，也可以清空当前 token 走请求头透传
 - 保留摘要日志，便于排查问题
 
 > 当前版本的 token 存在本机配置文件中。后续可以改成 Windows Credential Manager / macOS Keychain。
 
 ## 使用
 
-初始化配置：
+发布后使用二进制文件：
 
 ```powershell
-cargo run -- init
+.\copilot-responses-proxy.exe init
 ```
 
 添加 token：
 
 ```powershell
-cargo run -- token add main sk-your-token --label Main
+.\copilot-responses-proxy.exe token add main sk-your-token --label Main
 ```
 
 切换 token：
 
 ```powershell
-cargo run -- token use main
+.\copilot-responses-proxy.exe token use main
+```
+
+清空当前 token，改为透传 Copilot 请求里的 `Authorization`：
+
+```powershell
+.\copilot-responses-proxy.exe token clear
 ```
 
 启动托盘代理：
 
 ```powershell
-cargo run
+.\copilot-responses-proxy.exe
 ```
 
 调试时只启动代理服务：
 
 ```powershell
-cargo run -- serve
+.\copilot-responses-proxy.exe serve
 ```
 
 Windows 构建无控制台窗口版本：
@@ -63,6 +69,8 @@ Windows 构建无控制台窗口版本：
 ```powershell
 cargo build --release --features hide-console
 ```
+
+开发时可以用 `cargo run -- <command>` 替代上面的 exe 命令。
 
 Copilot 自定义 endpoint 配置为：
 
@@ -86,7 +94,7 @@ When using VS Code Insiders Copilot Agent mode with a New API-backed Responses e
 
 Removing that field allows the same request to pass through the upstream service.
 
-This app makes the workaround persistent: configure Copilot once with a local endpoint, then let the proxy forward requests, remove `truncation`, and switch tokens from the tray or CLI.
+This app makes the workaround persistent: configure Copilot once with a local endpoint, then let the proxy forward requests and remove `truncation`. Authentication can stay managed by Copilot, or the proxy can inject a selected token profile.
 
 ## Features
 
@@ -95,7 +103,7 @@ This app makes the workaround persistent: configure Copilot once with a local en
 - Forwards to `https://api.freshid.top/v1/responses`
 - Removes top-level `truncation`
 - Multiple token profiles
-- Token switching from tray or CLI
+- Token switching from tray or CLI, with a clear option for request-header pass-through
 - Summary logs for debugging
 
 > Token values are currently stored in the local config file. A future version can move them to Windows Credential Manager / macOS Keychain.
@@ -103,10 +111,11 @@ This app makes the workaround persistent: configure Copilot once with a local en
 ## Usage
 
 ```powershell
-cargo run -- init
-cargo run -- token add main sk-your-token --label Main
-cargo run -- token use main
-cargo run
+.\copilot-responses-proxy.exe init
+.\copilot-responses-proxy.exe token add main sk-your-token --label Main
+.\copilot-responses-proxy.exe token use main
+.\copilot-responses-proxy.exe token clear
+.\copilot-responses-proxy.exe
 ```
 
 Set Copilot custom endpoint to:

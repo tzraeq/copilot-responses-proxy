@@ -92,6 +92,10 @@ impl AppConfig {
         Ok(())
     }
 
+    pub fn clear_active_token(&mut self) {
+        self.active_token = None;
+    }
+
     pub fn remove_token(&mut self, id: &str) -> Result<()> {
         let before = self.tokens.len();
         self.tokens.retain(|token| token.id != id);

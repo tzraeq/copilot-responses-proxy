@@ -128,13 +128,6 @@ async fn proxy_handler(state: ProxyState, request: Request<Incoming>) -> Respons
     let active_token = config.active_token_value().map(str::to_string);
     let upstream_url = config.upstream_url.clone();
 
-    if active_token.is_none() && !parts.headers.contains_key(header::AUTHORIZATION) {
-        return json_error(
-            StatusCode::UNAUTHORIZED,
-            "no active token configured; run `copilot-responses-proxy token add default <token>`",
-        );
-    }
-
     let mut outbound = state.client.request(method, &upstream_url);
     outbound = apply_request_headers(outbound, &parts.headers, active_token.as_deref());
     if parts.method != Method::GET && parts.method != Method::HEAD {

@@ -67,7 +67,7 @@ fn run(with_tray: bool) -> Result<()> {
 
 fn token_command(args: &[String]) -> Result<()> {
     let Some(command) = args.first().map(String::as_str) else {
-        bail!("missing token command; expected add/use/remove/list");
+        bail!("missing token command; expected add/use/remove/clear/list");
     };
     let (path, mut config) = load_or_create_config()?;
 
@@ -99,6 +99,12 @@ fn token_command(args: &[String]) -> Result<()> {
                 config.active_token.as_deref().unwrap_or("<none>")
             );
         }
+        "clear" => {
+            config.clear_active_token();
+            save_config(&path, &config)?;
+            println!("Active token cleared.");
+            println!("Authorization will be forwarded from incoming requests.");
+        }
         "list" => {
             if config.tokens.is_empty() {
                 println!("No token profiles configured.");
@@ -113,7 +119,7 @@ fn token_command(args: &[String]) -> Result<()> {
                 }
             }
         }
-        other => bail!("unknown token command `{other}`; expected add/use/remove/list"),
+        other => bail!("unknown token command `{other}`; expected add/use/remove/clear/list"),
     }
 
     Ok(())
@@ -165,6 +171,7 @@ Commands:
   token add <id> <token> [--label <label>]
   token use <id>
   token remove <id>
+  token clear
   token list
   path config
   path logs
