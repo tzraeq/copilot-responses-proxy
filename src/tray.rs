@@ -2,6 +2,8 @@ use crate::config::{REASONING_EFFORTS, default_log_dir, load_config, save_config
 use crate::proxy::SharedConfig;
 use crate::system_open;
 use anyhow::{Context, Result};
+use png::{BitDepth, ColorType, Decoder, Transformations};
+use std::io::Cursor;
 use std::path::PathBuf;
 use tao::event::{Event, StartCause};
 use tao::event_loop::{ControlFlow, EventLoopBuilder};
@@ -172,7 +174,6 @@ fn build_menu(config: &crate::config::AppConfig) -> Menu {
         "Copilot 配置地址（↓↓↓ 点击复制 ↓↓↓）",
         false,
         None,
-   
     );
     let endpoint = MenuItem::with_id("copy_endpoint", config.endpoint(), true, None);
     let upstream = MenuItem::with_id(
@@ -274,22 +275,34 @@ fn append_submenu(menu: &Submenu, item: &impl IsMenuItem) {
     }
 }
 
+const TRAY_ICON_BYTES: &[u8] = include_bytes!("../assets/tray-icon.png");
+
 fn build_icon() -> Result<Icon> {
-    let size = 32;
-    let mut rgba = Vec::with_capacity(size * size * 4);
-    for y in 0..size {
-        for x in 0..size {
-            let border = x < 2 || y < 2 || x >= size - 2 || y >= size - 2;
-            let diagonal = (x as i32 - y as i32).abs() <= 2;
-            let (r, g, b, a) = if border {
-                (24, 24, 27, 255)
-            } else if diagonal {
-                (255, 255, 255, 255)
-            } else {
-                (34, 197, 94, 255)
-            };
-            rgba.extend_from_slice(&[r, g, b, a]);
-        }
+    let mut decoder = Decoder::new(Cursor::new(TRAY_ICON_BYTES));
+    decoder.set_transformations(Transformations::EXPAND | Transformations::STRIP_16);
+    let mut reader = decoder
+        .read_info()
+        .context("failed to read tray icon png")?;
+    let output_buffer_size = reader
+        .output_buffer_size()
+        .context("tray icon png output buffer is too large")?;
+    let mut buffer = vec![0; output_buffer_size];
+    let output = reader
+        .next_frame(&mut buffer)
+        .context("failed to decode tray icon png")?;
+
+    if output.color_type != ColorType::Rgba || output.bit_depth != BitDepth::Eight {
+        anyhow::bail!(
+            "tray icon png must be 8-bit RGBA, got {:?} {:?}",
+            output.color_type,
+            output.bit_depth
+        );
     }
-    Icon::from_rgba(rgba, size as u32, size as u32).context("failed to create tray icon")
+
+    Icon::from_rgba(
+        buffer[..output.buffer_size()].to_vec(),
+        output.width,
+        output.height,
+    )
+    .context("failed to create tray icon")
 }
