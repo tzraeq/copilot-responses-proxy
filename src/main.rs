@@ -12,7 +12,9 @@ mod proxy;
 mod system_open;
 mod tray;
 
-use config::{default_log_dir, load_or_create_config, save_config};
+use config::{
+    REASONING_EFFORTS, ReasoningEffort, default_log_dir, load_or_create_config, save_config,
+};
 
 fn main() -> Result<()> {
     let args: Vec<String> = env::args().skip(1).collect();
@@ -21,6 +23,7 @@ fn main() -> Result<()> {
         Some("init") => init_config(),
         Some("serve") => run(false),
         Some("token") => token_command(&args[1..]),
+        Some("reasoning") => reasoning_command(&args[1..]),
         Some("path") => path_command(&args[1..]),
         Some("-h" | "--help" | "help") => {
             print_help();
@@ -125,6 +128,50 @@ fn token_command(args: &[String]) -> Result<()> {
     Ok(())
 }
 
+fn reasoning_command(args: &[String]) -> Result<()> {
+    let Some(command) = args.first().map(String::as_str) else {
+        bail!("missing reasoning command; expected use/clear/list");
+    };
+    let (path, mut config) = load_or_create_config()?;
+
+    match command {
+        "use" | "set" => {
+            let effort = args
+                .get(1)
+                .context("missing reasoning effort; expected none/minimal/low/medium/high/xhigh")?
+                .parse::<ReasoningEffort>()?;
+            config.set_reasoning_effort(effort);
+            save_config(&path, &config)?;
+            println!("Reasoning effort: {effort}");
+        }
+        "clear" => {
+            config.clear_reasoning_effort();
+            save_config(&path, &config)?;
+            println!("Reasoning effort cleared.");
+            println!("Requests will be forwarded without proxy reasoning-effort rewrite.");
+        }
+        "list" => {
+            let pass_through_marker = if config.reasoning_effort.is_none() {
+                "*"
+            } else {
+                " "
+            };
+            println!("{pass_through_marker} pass-through");
+            for effort in REASONING_EFFORTS {
+                let marker = if config.reasoning_effort == Some(effort) {
+                    "*"
+                } else {
+                    " "
+                };
+                println!("{marker} {effort}");
+            }
+        }
+        other => bail!("unknown reasoning command `{other}`; expected use/clear/list"),
+    }
+
+    Ok(())
+}
+
 fn path_command(args: &[String]) -> Result<()> {
     let Some(command) = args.first().map(String::as_str) else {
         bail!("missing path command; expected config/logs/open-config/open-logs");
@@ -173,6 +220,9 @@ Commands:
   token remove <id>
   token clear
   token list
+  reasoning use <none|minimal|low|medium|high|xhigh>
+  reasoning clear
+  reasoning list
   path config
   path logs
   path open-config

@@ -1,4 +1,4 @@
-use crate::config::{default_log_dir, load_config, save_config};
+use crate::config::{REASONING_EFFORTS, default_log_dir, load_config, save_config};
 use crate::proxy::SharedConfig;
 use crate::system_open;
 use anyhow::{Context, Result};
@@ -119,6 +119,18 @@ impl TrayApp {
                 self.replace_shared_config(config);
                 self.rebuild_menu()?;
             }
+            other if other.starts_with("reasoning:") => {
+                let value = other.trim_start_matches("reasoning:");
+                let mut config = load_config(&self.config_path)?;
+                if value == "clear" {
+                    config.clear_reasoning_effort();
+                } else {
+                    config.set_reasoning_effort(value.parse()?);
+                }
+                save_config(&self.config_path, &config)?;
+                self.replace_shared_config(config);
+                self.rebuild_menu()?;
+            }
             "quit" => {
                 self.should_quit = true;
             }
@@ -187,6 +199,7 @@ fn build_menu(config: &crate::config::AppConfig) -> Submenu {
     append(&menu, &upstream);
     append(&menu, &PredefinedMenuItem::separator());
     append(&menu, &truncation);
+    append(&menu, &build_reasoning_menu(config));
     append(&menu, &PredefinedMenuItem::separator());
 
     let pass_through = CheckMenuItem::with_id(
@@ -234,6 +247,32 @@ fn build_menu(config: &crate::config::AppConfig) -> Submenu {
     );
     append(&menu, &PredefinedMenuItem::separator());
     append(&menu, &MenuItem::with_id("quit", "Quit", true, None));
+
+    menu
+}
+
+fn build_reasoning_menu(config: &crate::config::AppConfig) -> Submenu {
+    let menu = Submenu::new("Reasoning Effort", true);
+    let pass_through = CheckMenuItem::with_id(
+        "reasoning:clear",
+        "Pass Through",
+        true,
+        config.reasoning_effort.is_none(),
+        None,
+    );
+    append(&menu, &pass_through);
+    append(&menu, &PredefinedMenuItem::separator());
+
+    for effort in REASONING_EFFORTS {
+        let item = CheckMenuItem::with_id(
+            format!("reasoning:{}", effort.as_str()),
+            effort.as_str(),
+            true,
+            config.reasoning_effort == Some(effort),
+            None,
+        );
+        append(&menu, &item);
+    }
 
     menu
 }

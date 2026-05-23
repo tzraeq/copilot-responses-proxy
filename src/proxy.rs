@@ -1,4 +1,4 @@
-use crate::config::AppConfig;
+use crate::config::{AppConfig, ReasoningEffort};
 use anyhow::{Context, Result};
 use bytes::Bytes;
 use futures_util::TryStreamExt;
@@ -10,7 +10,7 @@ use hyper::service::service_fn;
 use hyper::{HeaderMap, Method, Request, Response, StatusCode, header};
 use hyper_util::rt::{TokioExecutor, TokioIo};
 use hyper_util::server::conn::auto::Builder as AutoBuilder;
-use serde_json::{Value, json};
+use serde_json::{Map, Value, json};
 use std::convert::Infallible;
 use std::error::Error;
 use std::net::SocketAddr;
@@ -102,6 +102,7 @@ fn health_response(state: ProxyState) -> Response<ResponseBody> {
             "endpoint": config.endpoint(),
             "upstream_url": config.upstream_url,
             "drop_truncation": config.drop_truncation,
+            "reasoning_effort": config.reasoning_effort,
             "active_token": config.active_token,
             "token_count": config.tokens.len(),
             "log_requests": config.log_requests,
@@ -123,7 +124,7 @@ async fn proxy_handler(state: ProxyState, request: Request<Incoming>) -> Respons
     };
 
     let config = read_config(&state.config);
-    let forward = prepare_forward_body(&raw_body, config.drop_truncation);
+    let forward = prepare_forward_body(&raw_body, config.drop_truncation, config.reasoning_effort);
     let method = reqwest_method(&parts.method);
     let active_token = config.active_token_value().map(str::to_string);
     let upstream_url = config.upstream_url.clone();
@@ -185,18 +186,13 @@ async fn proxy_handler(state: ProxyState, request: Request<Incoming>) -> Respons
     response
 }
 
-pub fn prepare_forward_body(raw_body: &[u8], drop_truncation: bool) -> ForwardBody {
+pub fn prepare_forward_body(
+    raw_body: &[u8],
+    drop_truncation: bool,
+    reasoning_effort: Option<ReasoningEffort>,
+) -> ForwardBody {
     let parsed = serde_json::from_slice::<Value>(raw_body).ok();
     let summary = parsed.as_ref().map(summarize_body);
-
-    if !drop_truncation {
-        return ForwardBody {
-            body: raw_body.to_vec(),
-            rewrites: Vec::new(),
-            summary,
-            forwarded_summary: None,
-        };
-    }
 
     let Some(Value::Object(mut object)) = parsed else {
         return ForwardBody {
@@ -207,7 +203,18 @@ pub fn prepare_forward_body(raw_body: &[u8], drop_truncation: bool) -> ForwardBo
         };
     };
 
-    if object.remove("truncation").is_none() {
+    let mut rewrites = Vec::new();
+
+    if drop_truncation && object.remove("truncation").is_some() {
+        rewrites.push("drop_truncation");
+    }
+
+    if let Some(effort) = reasoning_effort {
+        set_reasoning_effort(&mut object, effort);
+        rewrites.push("set_reasoning_effort");
+    }
+
+    if rewrites.is_empty() {
         return ForwardBody {
             body: raw_body.to_vec(),
             rewrites: Vec::new(),
@@ -220,9 +227,24 @@ pub fn prepare_forward_body(raw_body: &[u8], drop_truncation: bool) -> ForwardBo
     let body = serde_json::to_vec(&forwarded).unwrap_or_else(|_| raw_body.to_vec());
     ForwardBody {
         body,
-        rewrites: vec!["drop_truncation"],
+        rewrites,
         summary,
         forwarded_summary: Some(summarize_body(&forwarded)),
+    }
+}
+
+fn set_reasoning_effort(object: &mut Map<String, Value>, effort: ReasoningEffort) {
+    let effort = Value::String(effort.as_str().to_string());
+    match object.get_mut("reasoning") {
+        Some(Value::Object(reasoning)) => {
+            reasoning.insert("effort".to_string(), effort);
+        }
+        Some(reasoning) => {
+            *reasoning = json!({ "effort": effort });
+        }
+        None => {
+            object.insert("reasoning".to_string(), json!({ "effort": effort }));
+        }
     }
 }
 
@@ -311,6 +333,11 @@ fn summarize_body(value: &Value) -> Value {
         "stream": value.get("stream").cloned().unwrap_or(Value::Null),
         "store": value.get("store").cloned().unwrap_or(Value::Null),
         "truncation": value.get("truncation").cloned().unwrap_or(Value::Null),
+        "reasoning_effort": value
+            .get("reasoning")
+            .and_then(|reasoning| reasoning.get("effort"))
+            .cloned()
+            .unwrap_or(Value::Null),
         "max_output_tokens": value.get("max_output_tokens").cloned().unwrap_or(Value::Null),
         "input_item_count": input_item_count,
         "tool_count": tool_count,
@@ -400,7 +427,7 @@ mod tests {
     #[test]
     fn drops_top_level_truncation_when_enabled() {
         let raw = br#"{"model":"gpt-5.5","truncation":"disabled","stream":true}"#;
-        let forward = prepare_forward_body(raw, true);
+        let forward = prepare_forward_body(raw, true, None);
         let value: Value = serde_json::from_slice(&forward.body).unwrap();
 
         assert_eq!(forward.rewrites, vec!["drop_truncation"]);
@@ -411,9 +438,44 @@ mod tests {
     #[test]
     fn preserves_truncation_when_disabled() {
         let raw = br#"{"truncation":"disabled"}"#;
-        let forward = prepare_forward_body(raw, false);
+        let forward = prepare_forward_body(raw, false, None);
 
         assert!(forward.rewrites.is_empty());
         assert_eq!(forward.body, raw);
+    }
+
+    #[test]
+    fn sets_reasoning_effort_when_configured() {
+        let raw = br#"{"model":"gpt-5.5","stream":true}"#;
+        let forward = prepare_forward_body(raw, false, Some(ReasoningEffort::High));
+        let value: Value = serde_json::from_slice(&forward.body).unwrap();
+
+        assert_eq!(forward.rewrites, vec!["set_reasoning_effort"]);
+        assert_eq!(value["reasoning"]["effort"], "high");
+        assert_eq!(value["model"], "gpt-5.5");
+    }
+
+    #[test]
+    fn overwrites_existing_reasoning_effort_and_preserves_other_reasoning_fields() {
+        let raw = br#"{"reasoning":{"effort":"low","summary":"auto"}}"#;
+        let forward = prepare_forward_body(raw, false, Some(ReasoningEffort::XHigh));
+        let value: Value = serde_json::from_slice(&forward.body).unwrap();
+
+        assert_eq!(value["reasoning"]["effort"], "xhigh");
+        assert_eq!(value["reasoning"]["summary"], "auto");
+    }
+
+    #[test]
+    fn combines_truncation_drop_and_reasoning_effort_rewrite() {
+        let raw = br#"{"truncation":"disabled","reasoning":{"effort":"low"}}"#;
+        let forward = prepare_forward_body(raw, true, Some(ReasoningEffort::None));
+        let value: Value = serde_json::from_slice(&forward.body).unwrap();
+
+        assert_eq!(
+            forward.rewrites,
+            vec!["drop_truncation", "set_reasoning_effort"]
+        );
+        assert!(value.get("truncation").is_none());
+        assert_eq!(value["reasoning"]["effort"], "none");
     }
 }

@@ -1,11 +1,21 @@
 use anyhow::{Context, Result, bail};
 use serde::{Deserialize, Serialize};
 use std::env;
+use std::fmt;
 use std::fs;
 use std::path::{Path, PathBuf};
+use std::str::FromStr;
 
 pub const APP_NAME: &str = "copilot-responses-proxy";
 pub const DEFAULT_UPSTREAM_URL: &str = "https://api.freshid.top/v1/responses";
+pub const REASONING_EFFORTS: [ReasoningEffort; 6] = [
+    ReasoningEffort::None,
+    ReasoningEffort::Minimal,
+    ReasoningEffort::Low,
+    ReasoningEffort::Medium,
+    ReasoningEffort::High,
+    ReasoningEffort::XHigh,
+];
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(default)]
@@ -14,9 +24,22 @@ pub struct AppConfig {
     pub listen_port: u16,
     pub upstream_url: String,
     pub drop_truncation: bool,
+    pub reasoning_effort: Option<ReasoningEffort>,
     pub active_token: Option<String>,
     pub tokens: Vec<TokenProfile>,
     pub log_requests: bool,
+}
+
+#[derive(Debug, Copy, Clone, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum ReasoningEffort {
+    None,
+    Minimal,
+    Low,
+    Medium,
+    High,
+    #[serde(rename = "xhigh")]
+    XHigh,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -33,9 +56,47 @@ impl Default for AppConfig {
             listen_port: 8787,
             upstream_url: DEFAULT_UPSTREAM_URL.to_string(),
             drop_truncation: true,
+            reasoning_effort: None,
             active_token: None,
             tokens: Vec::new(),
             log_requests: true,
+        }
+    }
+}
+
+impl ReasoningEffort {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::None => "none",
+            Self::Minimal => "minimal",
+            Self::Low => "low",
+            Self::Medium => "medium",
+            Self::High => "high",
+            Self::XHigh => "xhigh",
+        }
+    }
+}
+
+impl fmt::Display for ReasoningEffort {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter.write_str(self.as_str())
+    }
+}
+
+impl FromStr for ReasoningEffort {
+    type Err = anyhow::Error;
+
+    fn from_str(value: &str) -> Result<Self> {
+        match value.to_ascii_lowercase().as_str() {
+            "none" => Ok(Self::None),
+            "minimal" => Ok(Self::Minimal),
+            "low" => Ok(Self::Low),
+            "medium" => Ok(Self::Medium),
+            "high" => Ok(Self::High),
+            "xhigh" => Ok(Self::XHigh),
+            _ => bail!(
+                "invalid reasoning effort `{value}`; expected one of: none, minimal, low, medium, high, xhigh"
+            ),
         }
     }
 }
@@ -94,6 +155,14 @@ impl AppConfig {
 
     pub fn clear_active_token(&mut self) {
         self.active_token = None;
+    }
+
+    pub fn set_reasoning_effort(&mut self, effort: ReasoningEffort) {
+        self.reasoning_effort = Some(effort);
+    }
+
+    pub fn clear_reasoning_effort(&mut self) {
+        self.reasoning_effort = None;
     }
 
     pub fn remove_token(&mut self, id: &str) -> Result<()> {
