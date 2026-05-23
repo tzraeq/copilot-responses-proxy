@@ -102,6 +102,18 @@ impl TrayApp {
                     config.listen_host, config.listen_port
                 ))?;
             }
+            "copy_endpoint" => {
+                let config = self
+                    .shared_config
+                    .read()
+                    .expect("config lock poisoned")
+                    .clone();
+                let mut clipboard =
+                    arboard::Clipboard::new().context("failed to access clipboard")?;
+                clipboard
+                    .set_text(config.endpoint())
+                    .context("failed to copy proxy endpoint to clipboard")?;
+            }
             "reload_config" => {
                 self.reload_config()?;
             }
@@ -172,7 +184,8 @@ fn build_menu(config: &crate::config::AppConfig) -> Submenu {
         false,
         None,
     );
-    let endpoint = MenuItem::with_id("endpoint", config.endpoint(), false, None);
+    let endpoint_label = MenuItem::with_id("endpoint_label", "代理地址", false, None);
+    let endpoint = MenuItem::with_id("copy_endpoint", config.endpoint(), true, None);
     let upstream = MenuItem::with_id(
         "upstream",
         format!("Upstream: {}", config.active_upstream_url()),
@@ -188,6 +201,7 @@ fn build_menu(config: &crate::config::AppConfig) -> Submenu {
     );
 
     append(&menu, &status);
+    append(&menu, &endpoint_label);
     append(&menu, &endpoint);
     append(&menu, &upstream);
     append(&menu, &PredefinedMenuItem::separator());

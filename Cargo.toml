@@ -5,6 +5,7 @@ edition = "2024"
 
 [dependencies]
 anyhow = "1"
+arboard = { version = "3", default-features = false }
 bytes = "=1.10.1"
 dirs = "6"
 futures-util = "=0.3.31"
