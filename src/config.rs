@@ -8,7 +8,7 @@ use std::path::{Path, PathBuf};
 use std::str::FromStr;
 
 pub const APP_NAME: &str = "copilot-responses-proxy";
-pub const CONFIG_VERSION: &str = "0.1.0";
+pub const CONFIG_VERSION: &str = "0.6.0";
 pub const DEFAULT_UPSTREAM_URL: &str = "https://api.freshid.top/v1/responses";
 pub const REASONING_EFFORTS: [ReasoningEffort; 5] = [
     ReasoningEffort::Minimal,
