@@ -1,5 +1,5 @@
 use crate::config::{REASONING_EFFORTS, default_log_dir, load_config, save_config};
-use crate::proxy::{ADMIN_HEALTH_PATH, SharedConfig};
+use crate::proxy::SharedConfig;
 use crate::system_open;
 use anyhow::{Context, Result};
 use std::path::PathBuf;
@@ -91,14 +91,6 @@ impl TrayApp {
                 std::fs::create_dir_all(&log_dir)?;
                 system_open::open_detached(log_dir.to_string_lossy())?;
             }
-            "open_health" => {
-                let config = self
-                    .shared_config
-                    .read()
-                    .expect("config lock poisoned")
-                    .clone();
-                system_open::open_detached(config.local_url(ADMIN_HEALTH_PATH))?;
-            }
             "copy_endpoint" => {
                 let config = self
                     .shared_config
@@ -175,13 +167,13 @@ impl TrayApp {
 fn build_menu(config: &crate::config::AppConfig) -> Menu {
     let menu = Menu::new();
 
-    let status = MenuItem::with_id(
-        "status",
-        format!("Running: {}:{}", config.listen_host, config.listen_port),
+    let endpoint_label = MenuItem::with_id(
+        "endpoint_label",
+        "Copilot 配置地址（↓↓↓ 点击复制 ↓↓↓）",
         false,
         None,
+   
     );
-    let endpoint_label = MenuItem::with_id("endpoint_label", "代理地址", false, None);
     let endpoint = MenuItem::with_id("copy_endpoint", config.endpoint(), true, None);
     let upstream = MenuItem::with_id(
         "upstream",
@@ -197,7 +189,6 @@ fn build_menu(config: &crate::config::AppConfig) -> Menu {
         None,
     );
 
-    append_menu(&menu, &status);
     append_menu(&menu, &endpoint_label);
     append_menu(&menu, &endpoint);
     append_menu(&menu, &upstream);
@@ -218,10 +209,6 @@ fn build_menu(config: &crate::config::AppConfig) -> Menu {
     append_menu(
         &menu,
         &MenuItem::with_id("open_logs", "Open Logs", true, None),
-    );
-    append_menu(
-        &menu,
-        &MenuItem::with_id("open_health", "Open Admin Health", true, None),
     );
     append_menu(&menu, &PredefinedMenuItem::separator());
     append_menu(&menu, &MenuItem::with_id("quit", "Quit", true, None));
